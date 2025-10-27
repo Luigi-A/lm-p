@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LM Printzone Design Simulator</title>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Bebas+Neue&family=Poppins:wght@400;600&family=Roboto&display=swap" rel="stylesheet">
+<style>
+  body {
+    margin: 0; font-family: 'Poppins', sans-serif; background:#f9f9f9; color:#333;
+    display:flex; flex-direction:column; align-items:center; justify-content:flex-start;
+    min-height:100vh;
+  }
+  header {
+    width:100%; background:#d32f2f; color:#fff; padding:15px 20px; text-align:center;
+  }
+  .simulator-container {
+    display:flex; flex-wrap:wrap; justify-content:center; align-items:flex-start; gap:40px;
+    width:100%; max-width:1200px; padding:40px 20px;
+  }
+  #preview-area {
+    width:320px; height:400px; background:linear-gradient(to bottom,#fff,#eee);
+    border-radius:20px; box-shadow:0 8px 20px rgba(0,0,0,0.1);
+    position:relative; overflow:hidden; perspective:800px; transition:transform 0.6s;
+  }
+  #jersey-bg { position:absolute; width:100%; height:100%; object-fit:cover; opacity:0.9; }
+  #preview-shirt { position:absolute; width:100%; height:100%; display:flex; justify-content:center; align-items:center;
+    color:white; font-weight:bold; font-size:1.4em; text-shadow:1px 1px 3px rgba(0,0,0,0.5);
+  }
+  #logo-preview { position:absolute; top:45%; left:50%; transform:translate(-50%, -50%);
+    width:80px; height:auto; display:none; cursor:move;
+  }
+  #controls {
+    max-width:400px; background:white; padding:25px; border-radius:15px; box-shadow:0 6px 15px rgba(0,0,0,0.1);
+  }
+  #controls label { font-weight:600; display:block; margin:10px 0 5px; }
+  #controls input, #controls select, #controls button {
+    width:100%; padding:10px; border-radius:8px; border:1px solid #ccc; margin-bottom:10px;
+  }
+  #controls button {
+    background:#d32f2f; color:white; border:none; cursor:pointer; transition:0.3s;
+  }
+  #controls button:hover { background:#b71c1c; }
+  .btn-row { display:flex; gap:10px; flex-wrap:wrap; }
+  @media (max-width:768px){
+    .simulator-container { flex-direction:column; align-items:center; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🎨 LM Printzone Design Simulator</h1>
+  <a href="index.html" style="color:#fff; text-decoration:none;">← Back to Home</a>
+</header>
+
+<div class="simulator-container">
+  <!-- Preview -->
+  <div id="preview-area">
+    <img src="https://i.imgur.com/8h9f8Zr.png" alt="Jersey Mockup" id="jersey-bg">
+    <div id="preview-shirt">Your Design</div>
+    <img id="logo-preview" src="">
+  </div>
+
+  <!-- Controls -->
+  <div id="controls">
+    <label>Choose Product Type:</label>
+    <select id="productSelect">
+      <option value="jersey">Jersey</option>
+      <option value="tshirt">T-Shirt</option>
+      <option value="shorts">Shorts</option>
+      <option value="sticker">Sticker</option>
+    </select>
+
+    <div id="stickerShapes" style="display:none;">
+      <label>Sticker Shape:</label>
+      <select id="shapeSelect">
+        <option value="circle">Circle</option>
+        <option value="square">Square</option>
+        <option value="rectangle">Rectangle</option>
+        <option value="oval">Oval</option>
+        <option value="custom">Custom Shape</option>
+      </select>
+    </div>
+
+    <label>Color:</label>
+    <input type="color" id="colorPicker" value="#ff5252">
+
+    <label>Enter Text:</label>
+    <input type="text" id="customText" placeholder="Type your text...">
+
+    <label>Font:</label>
+    <select id="fontSelect">
+      <option value="'Poppins', sans-serif">Poppins</option>
+      <option value="'Bebas Neue', sans-serif">Bebas Neue</option>
+      <option value="'Roboto', sans-serif">Roboto</option>
+      <option value="'Anton', sans-serif">Anton</option>
+    </select>
+
+    <label>Upload Logo:</label>
+    <input type="file" id="logoUpload" accept="image/*">
+
+    <div class="btn-row">
+      <button id="toggleView">Switch to 3D</button>
+      <button id="downloadDesign" style="background:#388e3c;">Download</button>
+    </div>
+    <div class="btn-row">
+      <button id="undoBtn" style="background:#ffa000;">Undo</button>
+      <button id="redoBtn" style="background:#1976d2;">Redo</button>
+      <button id="removeBtn" style="background:#555;">Remove Logo/Text</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script>
+  const colorPicker = document.getElementById('colorPicker');
+  const customText = document.getElementById('customText');
+  const fontSelect = document.getElementById('fontSelect');
+  const previewShirt = document.getElementById('preview-shirt');
+  const previewArea = document.getElementById('preview-area');
+  const toggleView = document.getElementById('toggleView');
+  const downloadBtn = document.getElementById('downloadDesign');
+  const logoUpload = document.getElementById('logoUpload');
+  const logoPreview = document.getElementById('logo-preview');
+  const productSelect = document.getElementById('productSelect');
+  const shapeSelect = document.getElementById('shapeSelect');
+  const stickerShapes = document.getElementById('stickerShapes');
+  const jerseyBg = document.getElementById('jersey-bg');
+
+  let is3D = false;
+  let isDragging = false;
+  let offset = {x:0,y:0};
+  let history = [];
+  let historyIndex = -1;
+
+  const productImages = {
+    jersey: "https://i.imgur.com/8h9f8Zr.png",
+    tshirt: "https://i.imgur.com/kR8mNdl.png",
+    shorts: "https://i.imgur.com/D7qHGVk.png",
+    sticker: "https://i.imgur.com/z1qzRFP.png"
+  };
+
+  // Switch between product types
+  productSelect.addEventListener('change', () => {
+    const type = productSelect.value;
+    jerseyBg.src = productImages[type];
+    stickerShapes.style.display = type === "sticker" ? "block" : "none";
+    saveHistory();
+  });
+
+  // Sticker shape preview
+  shapeSelect.addEventListener('change', () => {
+    const shape = shapeSelect.value;
+    previewArea.style.borderRadius = shape === "circle" ? "50%" :
+                                     shape === "oval" ? "50% / 30%" :
+                                     shape === "rectangle" ? "10px" :
+                                     shape === "square" ? "0" : "0";
+    saveHistory();
+  });
+
+  // Color overlay
+  colorPicker.addEventListener('input', () => {
+    jerseyBg.style.filter = `drop-shadow(0 0 0 ${colorPicker.value}) saturate(150%)`;
+    saveHistory();
+  });
+
+  // Text and font
+  customText.addEventListener('input', () => { previewShirt.textContent = customText.value || 'Your Design'; saveHistory(); });
+  fontSelect.addEventListener('change', () => { previewShirt.style.fontFamily = fontSelect.value; saveHistory(); });
+
+  // 2D / 3D toggle
+  toggleView.addEventListener('click', () => {
+    is3D = !is3D;
+    previewArea.style.transform = is3D ? "rotateY(25deg)" : "rotateY(0deg)";
+    toggleView.textContent = is3D ? "Switch to 2D" : "Switch to 3D";
+  });
+
+  // Upload Logo
+  logoUpload.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if(file){
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        logoPreview.src = ev.target.result;
+        logoPreview.style.display = "block";
+        saveHistory();
+      };
+      reader.readAsDataURL(file);
+    }
+  });
+
+  // Drag Logo
+  logoPreview.addEventListener('mousedown', e => {
+    isDragging = true; offset.x = e.offsetX; offset.y = e.offsetY;
+  });
+  document.addEventListener('mouseup', () => isDragging = false);
+  document.addEventListener('mousemove', e => {
+    if(isDragging){
+      const rect = previewArea.getBoundingClientRect();
+      logoPreview.style.left = `${e.clientX - rect.left - offset.x}px`;
+      logoPreview.style.top = `${e.clientY - rect.top - offset.y}px`;
+      logoPreview.style.transform = "translate(0,0)";
+    }
+  });
+
+  // Undo / Redo / Remove
+  function saveHistory(){
+    const state = previewArea.innerHTML;
+    history = history.slice(0, historyIndex + 1);
+    history.push(state);
+    historyIndex++;
+  }
+  function undo(){ if(historyIndex > 0){ historyIndex--; previewArea.innerHTML = history[historyIndex]; } }
+  function redo(){ if(historyIndex < history.length - 1){ historyIndex++; previewArea.innerHTML = history[historyIndex]; } }
+  function removeElements(){ customText.value = ''; previewShirt.textContent = ''; logoPreview.style.display = 'none'; saveHistory(); }
+
+  document.getElementById('undoBtn').addEventListener('click', undo);
+  document.getElementById('redoBtn').addEventListener('click', redo);
+  document.getElementById('removeBtn').addEventListener('click', removeElements);
+
+  // Download
+  downloadBtn.addEventListener('click', () => {
+    html2canvas(previewArea).then(canvas => {
+      const link = document.createElement('a');
+      link.download = 'LM-Printzone-Design.png';
+      link.href = canvas.toDataURL();
+      link.click();
+    });
+  });
+
+  saveHistory();
+</script>
+</body>
+</html>
